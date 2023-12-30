@@ -5444,12 +5444,35 @@ impl<'a> Parser<'a> {
                     if dialect_of!(self is SnowflakeDialect) {
                         Ok(DataType::Array(ArrayElemTypeDef::None))
                     } else {
-                        self.expect_token(&Token::Lt)?;
+                        // support < (hive) or ( ( athena ) syntax
+                        let mut is_hive = true;
+                        match self.peek_token().token {
+                            Token::Lt => {
+                                self.next_token();
+                            }
+                            Token::LParen => {
+                                self.next_token();
+                                is_hive = false;
+                            }
+                            _ => {
+                                return self.expected(
+                                    "a left angle bracket or left parenthesis after ARRAY",
+                                    self.peek_token(),
+                                )
+                            }
+                        }
                         let (inside_type, _trailing_bracket) = self.parse_data_type_helper()?;
-                        trailing_bracket = self.expect_closing_angle_bracket(_trailing_bracket)?;
-                        Ok(DataType::Array(ArrayElemTypeDef::AngleBracket(Box::new(
-                            inside_type,
-                        ))))
+                        if is_hive {
+                            trailing_bracket = self.expect_closing_angle_bracket(_trailing_bracket)?;
+                            Ok(DataType::Array(ArrayElemTypeDef::AngleBracket(Box::new(
+                                inside_type,
+                            ))))
+                        } else {
+                            self.expect_token(&Token::RParen)?;
+                            Ok(DataType::Array(ArrayElemTypeDef::Parentheses(Box::new(
+                                inside_type,
+                            ))))
+                        }
                     }
                 }
                 Keyword::STRUCT if dialect_of!(self is BigQueryDialect) => {
@@ -5458,6 +5481,32 @@ impl<'a> Parser<'a> {
                         self.parse_struct_type_def(Self::parse_big_query_struct_field_def)?;
                     trailing_bracket = _trailing_bracket;
                     Ok(DataType::Struct(field_defs))
+                }
+                Keyword::ROW => {
+                    // ROW constructor syntax
+                    self.expect_token(&Token::LParen)?;
+                    let mut fields: Vec<StructField> = vec![];
+                    loop {
+                        let field_name = self.parse_identifier()?.into();
+                        // self.expect_token(&Token::Colon)?;
+                        let field_type = self.parse_data_type()?;
+                        fields.push(StructField { field_name, field_type });
+                        match self.peek_token().token {
+                            Token::Comma => {
+                                self.next_token();
+                                continue;
+                            }
+                            Token::RParen => break,
+                            _ => {
+                                return self.expected(
+                                    "a comma or right parenthesis after a field definition",
+                                    self.peek_token(),
+                                )
+                            }
+                        }
+                    }
+                    self.expect_token(&Token::RParen)?;
+                    Ok(DataType::RowStruct(fields))
                 }
                 _ => {
                     self.prev_token();

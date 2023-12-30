@@ -219,6 +219,11 @@ pub enum DataType {
     /// [hive]: https://docs.cloudera.com/cdw-runtime/cloud/impala-sql-reference/topics/impala-struct.html
     /// [bigquery]: https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#struct_type
     Struct(Vec<StructField>),
+    /// ROW Struct
+    ///
+    /// [athena]: https://docs.aws.amazon.com/athena/latest/ug/rows-and-structs.html
+    /// [trino]: https://trino.io/docs/current/language/types.html#row
+    RowStruct(Vec<StructField>),
 }
 
 impl fmt::Display for DataType {
@@ -344,6 +349,7 @@ impl fmt::Display for DataType {
                 ArrayElemTypeDef::None => write!(f, "ARRAY"),
                 ArrayElemTypeDef::SquareBracket(t) => write!(f, "{t}[]"),
                 ArrayElemTypeDef::AngleBracket(t) => write!(f, "ARRAY<{t}>"),
+                ArrayElemTypeDef::Parentheses(t) => write!(f, "ARRAY({t})"),
             },
             DataType::Custom(ty, modifiers) => {
                 if modifiers.is_empty() {
@@ -377,6 +383,13 @@ impl fmt::Display for DataType {
                     write!(f, "STRUCT<{}>", display_comma_separated(fields))
                 } else {
                     write!(f, "STRUCT")
+                }
+            }
+            DataType::RowStruct(fields) => {
+                if !fields.is_empty() {
+                    write!(f, "ROW({})", display_comma_separated(fields))
+                } else {
+                    write!(f, "ROW")
                 }
             }
         }
@@ -575,7 +588,7 @@ impl fmt::Display for CharLengthUnits {
 /// Represents the data type of the elements in an array (if any) as well as
 /// the syntax used to declare the array.
 ///
-/// For example: Bigquery/Hive use `ARRAY<INT>` whereas snowflake uses ARRAY.
+/// For example: Bigquery/Hive use `ARRAY<INT>` whereas snowflake uses ARRAY. Athena/Trino use ARRAY(BIGINT)
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -586,4 +599,6 @@ pub enum ArrayElemTypeDef {
     AngleBracket(Box<DataType>),
     /// `[]INT`
     SquareBracket(Box<DataType>),
+    // ARRAY(BIGINT)
+    Parentheses(Box<DataType>),
 }
